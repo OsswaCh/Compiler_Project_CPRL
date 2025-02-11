@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<item key="hasShownOverlayPopupBefore" value="true"/>
+	<section name="java.lang.Class">
+		<list key="findhistory">
+			<item value="scanStr"/>
+			<item value="scanCHa"/>
+			<item value="scanstr"/>
+			<item value="nextToken"/>
+			<item value="scancha"/>
+			<item value="scanide"/>
+			<item value="scan"/>
+			<item value="line"/>
+			<item value="getIden"/>
+			<item value="hex"/>
+			<item value="ask"/>
+			<item value="getIdentifierSymbol"/>
+		</list>
+	</section>
+</section>

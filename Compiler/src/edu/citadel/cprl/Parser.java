@@ -19,7 +19,75 @@ public final class Parser
     private IdTable idTable;
     private ErrorHandler errorHandler;
 
-    private final EnumSet<Symbol> emptySet = EnumSet.noneOf(Symbol.class);
+    //private final EnumSet<Symbol> emptySet = EnumSet.noneOf(Symbol.class);
+    
+    /**
+     * Symbols that can follow a statement.
+     */
+    private final Set<Symbol> stmtFollowers = EnumSet.of( 
+    		Symbol.identifier, Symbol.ifRW, Symbol.elseRW, 
+    		Symbol.whileRW, Symbol.loopRW, Symbol.forRW, 
+    		Symbol.readRW, Symbol.writelnRW, Symbol.exitRW,
+    		Symbol.leftBrace, Symbol.rightBrace, Symbol.returnRW,
+    		Symbol.writelnRW
+    		); 
+
+    /**
+     * Symbols that can follow a subprogram declaration.
+     */
+    private final Set<Symbol> subprogDeclFollowers = EnumSet.of(
+    		Symbol.procRW, Symbol.funRW, Symbol.EOF  
+      ); //changed
+
+    /**
+     * Symbols that can follow a factor.
+     */
+    private final Set<Symbol> factorFollowers = EnumSet.of(
+        Symbol.semicolon,   Symbol.loopRW,      Symbol.thenRW,
+        Symbol.rightParen,  Symbol.andRW,       Symbol.orRW,
+        Symbol.equals,      Symbol.notEqual,    Symbol.lessThan,
+        Symbol.lessOrEqual, Symbol.greaterThan, Symbol.greaterOrEqual,
+        Symbol.plus,        Symbol.minus,       Symbol.times,
+        Symbol.divide,      Symbol.modRW,       Symbol.rightBracket,
+        Symbol.comma,       Symbol.bitwiseAnd,  Symbol.bitwiseOr,
+        Symbol.bitwiseXor,  Symbol.leftShift,   Symbol.rightShift,
+        Symbol.dotdot
+    );
+    
+    private final Set<Symbol> relationFollowers = EnumSet.of(
+    	Symbol.andRW, Symbol.orRW, 
+        Symbol.semicolon, Symbol.thenRW, Symbol.loopRW, 
+   	    Symbol.rightParen, Symbol.rightBracket, Symbol.comma 	
+    );
+
+    private final Set<Symbol> simpleExprFollowers = EnumSet.of(
+		Symbol.equals, Symbol.notEqual, Symbol.lessThan, 
+	    Symbol.lessOrEqual, Symbol.greaterThan, Symbol.greaterOrEqual,
+	    Symbol.andRW, Symbol.orRW, 
+	    Symbol.semicolon, Symbol.thenRW, Symbol.loopRW, 
+	    Symbol.rightParen, Symbol.rightBracket, Symbol.comma 		
+    );
+    /**
+     * Symbols that can follow an initial declaration (computed property).
+     * Set is computed dynamically based on the scope level.
+     */
+    private Set<Symbol> initialDeclFollowers()
+      {
+        // An initial declaration can always be followed by another
+        // initial declaration, regardless of the scope level.
+        var followers = EnumSet.of(Symbol.constRW, Symbol.varRW, Symbol.typeRW);
+
+        if (idTable.scopeLevel() == ScopeLevel.GLOBAL)
+            followers.addAll(EnumSet.of(Symbol.procRW, Symbol.funRW));
+        else
+          {
+            followers.addAll(stmtFollowers);
+            followers.remove(Symbol.elseRW);
+          }
+
+        return followers;
+      }
+
 
     /**
      * Construct a parser with the specified scanner, identifier
@@ -47,7 +115,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(EnumSet.of(Symbol.EOF));
           }
       }
 
@@ -67,8 +135,17 @@ public final class Parser
      */
     private void parseInitialDecl() throws IOException
       {
-// ...   throw an internal error if the symbol is not one of constRW, varRW, or typeRW
-          }
+        	 switch(scanner.symbol())
+             {
+             case constRW -> parseConstDecl(); 
+             case varRW -> parseVarDecl();
+             case typeRW -> parseTypeDecl();
+             default ->
+    	         {
+    	        	 throw internalError(scanner.token()+
+                         "Expected 'const', 'var', or 'type' but found " + scanner.symbol()); 
+    	         }
+             }
       }
 
     /**
@@ -76,39 +153,57 @@ public final class Parser
      * <code>constDecl = "const" constId ":=" [ "-" ] literal ";" .</code>
      */
     private void parseConstDecl() throws IOException
-      {
-// ...
-      }
+    {
+      try
+        {
+          match(Symbol.constRW);
+          var constId = scanner.token();
+          match(Symbol.identifier);
+          match(Symbol.assign);
+
+          if (scanner.symbol() == Symbol.minus)
+              matchCurrentSymbol();
+
+          parseLiteral();
+          match(Symbol.semicolon);
+          idTable.add(constId, IdType.constantId);
+        }
+      catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(initialDeclFollowers());
+        }
+    }
 
     /**
      * Parse the following grammar rule:<br>
      * <code>literal = intLiteral | charLiteral | stringLiteral | "true" | "false" .</code>
      */
     private void parseLiteral() throws IOException
-      {
-        try
-          {
-            if (scanner.symbol().isLiteral())
-                matchCurrentSymbol();
-            else
-                throw error("Invalid literal expression.");
-          }
-        catch (ParserException e)
-          {
-            errorHandler.reportError(e);
-            recover(emptySet);
-          }
-      }
+    {
+      try
+        {
+          if (scanner.symbol().isLiteral())
+              matchCurrentSymbol();
+          else
+              throw error("Invalid literal expression.");
+        }
+      catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(factorFollowers);
+        }
+    }
 
     /**
      * Parse the following grammar rule:<br>
-     * <code>varDecl = "var" identifiers ":" ( typeName | arrayTypeConstr | stringTypeConstr)
+     * <code>varDecl = "var" identifiers ":" ( typeName |	 arrayTypeConstr | stringTypeConstr)
      *               [ ":=" initializer] ";" .</code>
      */
     private void parseVarDecl() throws IOException
       {
         try
-          {
+          { 
             match(Symbol.varRW);
             var identifiers = parseIdentifiers();
             match(Symbol.colon);
@@ -141,7 +236,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(initialDeclFollowers());
           }
       }
 
@@ -173,7 +268,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(EnumSet.of(Symbol.colon, Symbol.greaterThan));
             return Collections.emptyList();   // should never execute
           }
       }
@@ -200,7 +295,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(initialDeclFollowers());
           }
       }
 
@@ -210,7 +305,24 @@ public final class Parser
      */
     private void parseCompositeInitializer() throws IOException
       {
-// ...
+    	try 
+    	{
+    		//var symbol = scanner.symbol();
+    		match(Symbol.leftBrace);
+    		parseInitializer();
+    		while (scanner.symbol() == Symbol.comma) 
+    		{
+                match(Symbol.comma); 
+                parseInitializer();
+            }
+    		match(Symbol.rightBrace);
+    		
+    	}
+    	catch (ParserException e)
+    	{
+    		errorHandler.reportError(e);
+            recover(EnumSet.of(Symbol.semicolon, Symbol.comma, Symbol.rightBrace));
+    	}
       }
 
     /**
@@ -238,7 +350,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(initialDeclFollowers());
           }
       }
 
@@ -246,10 +358,30 @@ public final class Parser
      * Parse the following grammar rule:<br>
      * <code>arrayTypeDecl = "type" typeId "=" "array" "[" intConstValue "]"
      *                       "of" typeName ";" .</code>
+     *                       
      */
     private void parseArrayTypeDecl() throws IOException
       {
-// ...
+    	try
+    	{
+    		match(Symbol.typeRW);
+    		var typeId = scanner.token();
+    		match(Symbol.identifier);
+            match(Symbol.equals);
+            match(Symbol.arrayRW);
+            match(Symbol.leftBracket);
+            parseConstValue();
+            match(Symbol.rightBracket);
+            match(Symbol.ofRW);
+            parseTypeName();
+            match(Symbol.semicolon);
+            idTable.add(typeId, IdType.arrayTypeId);
+    	}
+    	catch (ParserException e)
+    	{
+    		errorHandler.reportError(e);
+            recover(initialDeclFollowers());
+    	}
       }
 
     /**
@@ -271,7 +403,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(EnumSet.of(Symbol.equals, Symbol.semicolon));
           }
       }
 
@@ -307,7 +439,8 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(initialDeclFollowers());
+            //check
           }
       }
 
@@ -317,7 +450,9 @@ public final class Parser
      */
     private void parseFieldDecls() throws IOException
       {
-// ...
+    	while (scanner.symbol() == Symbol.identifier)
+    		parseFieldDecl();
+    	
       }
 
     /**
@@ -326,7 +461,22 @@ public final class Parser
      */
     private void parseFieldDecl() throws IOException
       {
-// ...
+    	try {
+    	var fieldName = scanner.token(); 
+        match(Symbol.identifier); 
+        match(Symbol.colon); 
+        parseTypeName(); 
+        match(Symbol.semicolon);
+        
+        idTable.add(fieldName, IdType.fieldId);
+        
+    	}
+        catch (ParserException e) 
+    	{
+        	errorHandler.reportError(e);
+            recover(EnumSet.of(Symbol.identifier, Symbol.rightBrace));
+            //check
+        }
       }
 
     /**
@@ -335,7 +485,26 @@ public final class Parser
      */
     private void parseStringTypeDecl() throws IOException
       {
-// ...
+    	try {
+    		match(Symbol.typeRW);
+    		var typeId = scanner.token(); 
+            match(Symbol.identifier); 
+            match(Symbol.equals);
+            match(Symbol.stringRW);
+            match(Symbol.leftBracket);
+            parseConstValue();
+            //match(Symbol.intLiteral); 
+            match(Symbol.rightBracket);
+            match(Symbol.semicolon);
+
+            idTable.add(typeId, IdType.stringTypeId);
+    		 
+    	}
+    	catch (ParserException e)
+    	{
+        	errorHandler.reportError(e);
+            recover(initialDeclFollowers());
+    	}
       }
 
     /**
@@ -354,7 +523,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(EnumSet.of(Symbol.equals, Symbol.semicolon));
           }
       }
 
@@ -399,17 +568,20 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(EnumSet.of(Symbol.semicolon,  Symbol.comma,
+                    Symbol.rightParen, Symbol.leftBrace));
           }
       }
 
     /**
      * Parse the following grammar rule:<br>
      * <code>subprogramDecls = { subprogramDecl } .</code>
+     * @throws ParserException 
      */
-    private void parseSubprogramDecls() throws IOException
+    private void parseSubprogramDecls() throws IOException, ParserException
       {
-// ...
+    	while(scanner.symbol().isSubprogramDeclStarter())
+    		parseSubprogramDecl() ;   	
       }
 
     /**
@@ -418,8 +590,21 @@ public final class Parser
      */
     private void parseSubprogramDecl() throws IOException
       {
-// ...   throw an internal error if the symbol is not one of procRW or funRW
-      }
+    	//throw an internal error if the symbol is not one of procRW or funRW
+  
+		switch (scanner.symbol()) 
+		{
+            case procRW -> parseProcedureDecl(); 
+            case funRW -> parseFunctionDecl();   
+            default -> 
+            {
+            	throw internalError(scanner.token()
+                        +"Expected 'proc' or 'fun' but found " + scanner.symbol());
+            }
+		}	
+    	}
+    	 
+      
 
     /**
      * Parse the following grammar rule:<br>
@@ -458,7 +643,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(subprogDeclFollowers);
           }
       }
 
@@ -469,7 +654,36 @@ public final class Parser
      */
     private void parseFunctionDecl() throws IOException
       {
-// ...
+    	try {
+    		match(Symbol.funRW);
+            var funcId = scanner.token();
+            match(Symbol.identifier);
+            idTable.add(funcId, IdType.functionId);
+            match(Symbol.leftParen);
+            
+            //new scope
+            try {
+                idTable.openScope(ScopeLevel.LOCAL);
+                if (scanner.symbol().isParameterDeclStarter()) {
+                    parseParameterDecls();
+                }
+                match(Symbol.rightParen);
+                match(Symbol.colon);
+                parseTypeName();
+                match(Symbol.leftBrace);
+                parseInitialDecls();
+                parseStatements();
+            } finally {
+                idTable.closeScope();
+            }
+            match(Symbol.rightBrace);
+    		
+    	}
+    	catch (ParserException e)
+    	{
+    		errorHandler.reportError(e);
+    		recover(subprogDeclFollowers);
+    	}
       }
 
     /**
@@ -478,16 +692,49 @@ public final class Parser
      */
     private void parseParameterDecls() throws IOException
       {
-// ...
+ 		parseParameterDecl();
+ 		try 
+ 		{
+	    	while (scanner.symbol() == Symbol.comma) 
+	    	{
+	        	match(Symbol.comma);
+	        	parseParameterDecl(); 
+	        }
+        }
+        catch (ParserException e)
+        {
+			errorHandler.reportError(e);
+            recover(EnumSet.of(Symbol.rightParen)); // make prettier
+        }
+        	 
       }
 
     /**
      * Parse the following grammar rule:<br>
-     * <code>parameterDecl = [ "var" ] paramId ":" typeName .</code>
+     * <code>parameterDecl = [ "VAR" ] paramId ":" typeName .</code>
      */
     private void parseParameterDecl() throws IOException
       {
-// ...
+    	
+		try 
+		{
+			
+			if(scanner.symbol() == Symbol.varRW) {
+				matchCurrentSymbol();
+			}
+			var paramId=scanner.token();
+			match(Symbol.identifier); 
+			match(Symbol.colon);
+			parseTypeName();
+            idTable.add(paramId, IdType.variableId);
+			
+		}
+		
+        catch (ParserException e)
+        {
+			errorHandler.reportError(e);
+            recover(EnumSet.of(Symbol.comma, Symbol.rightParen));
+        }
       }
 
     /**
@@ -496,7 +743,10 @@ public final class Parser
      */
     private void parseStatements() throws IOException
       {
-// ...
+    	while(scanner.symbol().isStmtStarter())
+    	{
+    		parseStatement();
+    	}
       }
 
     /**
@@ -527,7 +777,11 @@ public final class Parser
                   }
                 else
                   {
-// ...   Big Hint: Read the book!
+                	//make parsing decision using lookahead symbol
+                	if(scanner.lookahead(2).symbol() == Symbol.leftParen)
+                		parseProcedureCallStmt();
+                	else
+                		throw error ("Identifier \"" + idStr + "\" has not been declared.");
                   }
               }
             else
@@ -536,7 +790,14 @@ public final class Parser
                   {
                     case Symbol.leftBrace -> parseCompoundStmt();
                     case Symbol.ifRW      -> parseIfStmt();
-// ...
+                    case Symbol.whileRW	  -> parseLoopStmt();
+                    case Symbol.loopRW    -> parseLoopStmt();
+                    case Symbol.forRW     -> parseForLoopStmt(); 
+                    case Symbol.exitRW    -> parseExitStmt();
+                    case Symbol.readRW    -> parseReadStmt();
+                    case Symbol.writeRW   -> parseWriteStmt();
+                    case Symbol.writelnRW -> parseWritelnStmt();
+                    case Symbol.returnRW  -> parseReturnStmt();
                     default -> throw internalError(scanner.token()
                                    + " cannot start a statement.");
                   }
@@ -545,7 +806,14 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            // Error recovery here is complicated for identifiers since they can both
+            // start a statement and appear elsewhere in the statement.  (Consider,
+            // for example, an assignment statement or a procedure call statement.)
+            // Since the most common error is to declare or reference an identifier
+            // incorrectly, we will assume that this is the case and advance to the
+            // end of the current statement before performing error recovery.
+            scanner.advanceTo(EnumSet.of(Symbol.semicolon, Symbol.rightBrace));
+            recover(stmtFollowers);
           }
       }
 
@@ -555,7 +823,32 @@ public final class Parser
      */
     private void parseAssignmentStmt() throws IOException
       {
-// ...
+    	//check if we need to put in table or not 
+    	try {
+    		parseVariable();
+    		try
+    		{
+    			match(Symbol.assign);
+    		}
+    		catch (ParserException e)
+    		{
+    			if(scanner.symbol() == Symbol.equals)
+    			{
+    				errorHandler.reportError(e);
+    				matchCurrentSymbol();
+    			}
+    			else
+    				throw e;
+    		} //added
+    		
+    		parseExpression();
+    		match(Symbol.semicolon);
+    	}
+        catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -564,7 +857,17 @@ public final class Parser
      */
     private void parseCompoundStmt() throws IOException
       {
-// ...
+    	try {
+    		match(Symbol.leftBrace);
+    		parseStatements();
+    		match(Symbol.rightBrace);
+    		
+    	}
+        catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -573,7 +876,27 @@ public final class Parser
      */
     private void parseIfStmt() throws IOException
       {
-// ...
+    	try
+    	{
+    	
+    		match(Symbol.ifRW);
+    		parseExpression();
+    		match(Symbol.thenRW);
+    		parseStatement();
+    		//parse the optional else 
+    		if(scanner.symbol() == Symbol.elseRW)
+    		{
+    			matchCurrentSymbol();
+    			parseStatement();
+    		}
+    		
+    		
+    	}
+    	catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -582,7 +905,21 @@ public final class Parser
      */
     private void parseLoopStmt() throws IOException
       {
-// ...
+    	try
+    	{
+    		if(scanner.symbol() == Symbol.whileRW)
+    		{
+    			match(Symbol.whileRW);
+    			parseExpression(); 
+    		}
+    		match(Symbol.loopRW);
+    		parseStatement();
+    	}
+    	catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -610,7 +947,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(stmtFollowers);
           }
         finally
           {
@@ -624,7 +961,22 @@ public final class Parser
      */
     private void parseExitStmt() throws IOException
       {
-// ...
+    	try
+    	{
+    		match(Symbol.exitRW);
+    		if(scanner.symbol() == Symbol.whenRW) 
+    		{
+    			match(Symbol.whenRW);
+    			parseExpression();
+    		}
+    		match(Symbol.semicolon);
+    		
+    	}
+        catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -633,7 +985,17 @@ public final class Parser
      */
     private void parseReadStmt() throws IOException
       {
-// ...
+    	try
+    	{
+    		match(Symbol.readRW);
+    		parseVariable();
+    		match(Symbol.semicolon);
+    	}
+    	catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -642,7 +1004,17 @@ public final class Parser
      */
     private void parseWriteStmt() throws IOException
       {
-// ...
+    	try
+    	{
+    		match(Symbol.writeRW);
+    		parseExpressions();
+    		match(Symbol.semicolon);
+    	}
+    	catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -651,7 +1023,13 @@ public final class Parser
      */
     private void parseExpressions() throws IOException
       {
-// ...
+    	parseExpression();
+	    	while (scanner.symbol() == Symbol.comma) 
+	    	{
+	        	matchCurrentSymbol();
+	        	parseExpression();
+	        }
+
       }
 
     /**
@@ -672,7 +1050,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(stmtFollowers);
           }
       }
 
@@ -683,7 +1061,24 @@ public final class Parser
      */
     private void parseProcedureCallStmt() throws IOException
       {
-// ...
+    	try
+    	{
+            match(Symbol.identifier);
+            match(Symbol.leftParen);
+            if(scanner.symbol().isExprStarter())
+            {
+            	parseExpressions();
+            	//check
+            }
+            match(Symbol.rightParen);
+            match(Symbol.semicolon);
+    		
+    	}
+    	catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -692,7 +1087,21 @@ public final class Parser
      */
     private void parseReturnStmt() throws IOException
       {
-// ...
+    	try
+    	{
+    		match(Symbol.returnRW);
+    		if(scanner.symbol().isExprStarter())
+    		{
+    			parseExpression();
+    			//check this
+    		}
+    		match(Symbol.semicolon);
+    	}
+    	catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(stmtFollowers);
+        }
       }
 
     /**
@@ -701,7 +1110,6 @@ public final class Parser
      *       indexExpr = "[" expression "]" .<br>
      *       fieldExpr = "." fieldId .</code>
      * <br>
-     * This helper method provides common logic for methods parseVariable() and
      * parseVariableExpr().  The method does not handle any ParserExceptions but
      * throws them back to the calling method where they can be handled appropriately.
      *
@@ -757,7 +1165,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(EnumSet.of(Symbol.assign, Symbol.semicolon));
           }
       }
 
@@ -781,21 +1189,37 @@ public final class Parser
      * Parse the following grammar rules:<br>
      * <code>relation = simpleExpr [ relationalOp simpleExpr ] .<br>
      *   relationalOp = "=" | "!=" | "&lt;" | "&lt;=" | "&gt;" | "&gt;=" .</code>
-     */
+     */    
     private void parseRelation() throws IOException
       {
-// ...
+    	parseSimpleExpr();
+        if (scanner.symbol().isRelationalOperator()) {
+            matchCurrentSymbol();
+            parseSimpleExpr();
+        }
+  
+        
       }
 
     /**
      * Parse the following grammar rules:<br>
      * <code>simpleExpr = [ signOp ] term { addingOp term } .<br>
      *       signOp = "+" | "-" .<br>
-     *       addingOp = "+" | "-" .</code>
+     *      S.</code>
      */
     private void parseSimpleExpr() throws IOException
       {
-// ...
+        if (scanner.symbol().isAddingOperator()) 
+        {
+        	matchCurrentSymbol();
+        }
+        parseTerm();
+
+        while (scanner.symbol().isAddingOperator()) 
+        {
+        	matchCurrentSymbol(); 
+            parseTerm(); 
+        }
       }
 
     /**
@@ -803,16 +1227,23 @@ public final class Parser
      * <code>term = factor { multiplyingOp factor } .<br>
      *       multiplyingOp = "*" | "/" | "mod" | "&" | "<<" | ">>" .</code>
      */
+
     private void parseTerm() throws IOException
       {
-// ...
-      }
+        parseFactor();
+
+        while (scanner.symbol().isMultiplyingOperator()) {
+            matchCurrentSymbol(); 
+            parseFactor(); 
+        }
+          }
 
     /**
      * Parse the following grammar rule:<br>
      * <code>factor = ("not" | "~") factor | literal | constId | variableExpr
      *              | functionCallExpr | "(" expression ")" .</code>
      */
+
     private void parseFactor() throws IOException
       {
         try
@@ -872,7 +1303,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(factorFollowers);
           }
       }
 
@@ -881,9 +1312,29 @@ public final class Parser
      * <code>constValue = ( [ "-"] literal ) | constId .</code>
      */
     private void parseConstValue() throws IOException
-      {
-// ...
-      }
+    {
+      try
+        {
+          if (scanner.symbol().isLiteral())
+              parseLiteral();
+          else if (scanner.symbol() == Symbol.minus
+              && scanner.lookahead(2).symbol() == Symbol.intLiteral)
+            {
+              // handle negative integer literals as a special case
+              match(Symbol.minus);
+              match(Symbol.intLiteral);
+            }
+          else if (scanner.symbol() == Symbol.identifier)
+              matchCurrentSymbol();
+          else
+              throw error("Invalid constant.");
+        }
+      catch (ParserException e)
+        {
+          errorHandler.reportError(e);
+          recover(EnumSet.of(Symbol.semicolon, Symbol.comma, Symbol.rightBrace, Symbol.rightBracket));
+        }
+    }
 
     /**
      * Parse the following grammar rule:<br>
@@ -898,7 +1349,7 @@ public final class Parser
         catch (ParserException e)
           {
             errorHandler.reportError(e);
-            recover(emptySet);
+            recover(factorFollowers);
           }
       }
 
@@ -909,10 +1360,20 @@ public final class Parser
      */
     private void parseFunctionCallExpr() throws IOException
       {
-// ...
-      }
+        try {
+            match(Symbol.identifier);
 
-    // Utility parsing methods
+            match(Symbol.leftParen);
+            if (scanner.symbol().isExprStarter()) {
+                parseExpressions(); 
+            }
+            match(Symbol.rightParen);
+
+        } catch (ParserException e) {
+            errorHandler.reportError(e);
+            recover(factorFollowers);
+        }
+      }
 
     /**
      * Check that the current scanner symbol is the expected symbol.  If it
@@ -946,7 +1407,8 @@ public final class Parser
     private void recover(Set<Symbol> followers) throws IOException
       {
         // no error recovery for version 1 of the parser
-        throw new FatalException("No error recovery -- parsing terminated.");
+        //throw new FatalException("No error recovery -- parsing terminated.");
+    	scanner.advanceTo(followers);
       }
 
     /**

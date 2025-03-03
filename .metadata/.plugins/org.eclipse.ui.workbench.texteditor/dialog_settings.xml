@@ -2,19 +2,23 @@
 <section name="Workbench">
 	<item key="hasShownOverlayPopupBefore" value="true"/>
 	<section name="java.lang.Class">
+		<item key="replaceBarOpen" value="false"/>
 		<list key="findhistory">
-			<item value="scanStr"/>
-			<item value="scanCHa"/>
-			<item value="scanstr"/>
-			<item value="nextToken"/>
-			<item value="scancha"/>
-			<item value="scanide"/>
-			<item value="scan"/>
-			<item value="line"/>
-			<item value="getIden"/>
-			<item value="hex"/>
-			<item value="ask"/>
-			<item value="getIdentifierSymbol"/>
+			<item value="expr"/>
+			<item value="stringtypedec"/>
+			<item value="string"/>
+			<item value="record"/>
+			<item value="defineed"/>
+			<item value="constvalue"/>
+			<item value="const"/>
+			<item value="here"/>
+			<item value="stringTypeConstr"/>
+			<item value="Constr"/>
+			<item value="parseAss"/>
+			<item value="parsetype"/>
+			<item value="parsevardecl"/>
+			<item value="parsecons"/>
+			<item value="initialdecl"/>
 		</list>
 	</section>
 </section>

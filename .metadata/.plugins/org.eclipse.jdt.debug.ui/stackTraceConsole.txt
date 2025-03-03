@@ -1,0 +1,3 @@
+if (scanner.symbol() != Symbol.rightBrace) {
+            throw error("Expected '}' at the end of composite initializer.");
+        }
